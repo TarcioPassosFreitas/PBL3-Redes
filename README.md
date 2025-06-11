@@ -129,9 +129,9 @@ JWT_EXP_DELTA_SECONDS=3600
 #########################
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=t.passos.2017.2@gmail.com
-SMTP_PASSWORD=jodp jznk lpmm aqgc
-EMAIL_FROM=t.passos.2017.2@gmail.com
+SMTP_USER=seu email
+SMTP_PASSWORD=sua senha
+EMAIL_FROM=seu email
 
 #########################
 # 📄 Logging
