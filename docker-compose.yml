@@ -63,6 +63,7 @@ services:
     container_name: ev-charging-api
     environment:
       - DB_URL=postgresql://evcharging:Tqp35ktFlHnfLhJgA21k2JkKEaPXmExrbMXKxTeWzl0=@postgres:5432/evcharging
+      - DB_PASSWORD=Tqp35ktFlHnfLhJgA21k2JkKEaPXmExrbMXKxTeWzl0=
       - REDIS_URL=redis://redis:6379/0
       - BLOCKCHAIN_URL=http://ganache:8545
       - BLOCKCHAIN_CONTRACT_ADDRESS=0x1234567890123456789012345678901234567890
@@ -74,9 +75,6 @@ services:
       - "5000:5000"
     volumes:
       - .:/app
-      - /app/venv
-      - /app/__pycache__
-      - /app/.pytest_cache
     depends_on:
       ganache:
         condition: service_started
