@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # Blockchain local (Ganache)
+  ganache:
+    image: trufflesuite/ganache:v7.7.7
+    container_name: ev-charging-ganache
+    command:
+      - --chain.hardfork=merge
+      - --wallet.totalAccounts=10
+      - --wallet.defaultBalance=1000
+      - --miner.blockGasLimit=12000000
+      - --server.host=0.0.0.0
+      - --server.port=8545
+    ports:
+      - "8545:8545"
+    networks:
+      - ev-charging-net
+
+  # Cache e Rate Limiting (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: ev-charging-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ev-charging-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Cache/Índice (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: ev-charging-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-evcharging}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-evcharging}
+      POSTGRES_DB: ${DB_NAME:-evcharging}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ev-charging-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-evcharging}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # API Flask
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ev-charging-api
+    environment:
+      - WEB3_PROVIDER=ganache
+      - WEB3_PROVIDER_URL=http://ganache:8545
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-evcharging}
+      - DB_USER=${DB_USER:-evcharging}
+      - DB_PASSWORD=${DB_PASSWORD:-evcharging}
+      - API_DEBUG=${API_DEBUG:-false}
+      - API_SECRET_KEY=${API_SECRET_KEY:-dev-secret-key}
+      - API_JWT_SECRET=${API_JWT_SECRET:-dev-jwt-secret}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - /app/venv
+      - /app/__pycache__
+      - /app/.pytest_cache
+    depends_on:
+      - ganache
+      - redis
+      - postgres
+    networks:
+      - ev-charging-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  ev-charging-net:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data: 

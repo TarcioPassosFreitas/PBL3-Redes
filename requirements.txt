@@ -1,0 +1,44 @@
+# Web Framework
+Flask==3.0.0
+gunicorn==21.2.0
+flask-limiter==3.5.0
+flask-cors==4.0.0
+
+# Database
+SQLAlchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+
+# Cache
+redis==5.0.1
+
+# Blockchain
+web3==6.11.3
+eth-account==0.10.0
+eth-typing==4.0.0
+eth-utils==2.3.1
+
+# Auth
+PyJWT==2.8.0
+cryptography==41.0.5
+
+# Utils
+python-dateutil==2.8.2
+pytz==2023.3
+requests==2.31.0
+pydantic==2.5.2
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Development
+black==23.11.0
+flake8==6.1.0
+isort==5.12.0
+mypy==1.7.1
+
+# Additional
+flasgger>=0.9.7
+python-dotenv 

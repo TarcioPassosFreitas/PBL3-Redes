@@ -1,0 +1,8 @@
+Diretório de migrações do Alembic.
+
+Use os comandos:
+
+- alembic revision --autogenerate -m "mensagem"
+- alembic upgrade head
+
+para gerenciar as migrações do banco de dados. 
