@@ -33,6 +33,7 @@ class Config:
     API_JWT_SECRET = os.getenv("API_JWT_SECRET", "dev-jwt-secret")
     API_JWT_ALGORITHM = "HS256"
     API_JWT_EXPIRATION = 3600  # 1 hora
+    API_PREFIX = "/api/v1"
     
     # Rate Limiting
     RATE_LIMIT_DEFAULT = "200 per day"
@@ -69,6 +70,8 @@ class Config:
     SWAGGER_DESCRIPTION = "API para gerenciamento de estações de carregamento de veículos elétricos"
     SWAGGER_VERSION = "1.0.0"
     SWAGGER_UI_URL = "/docs"
+    
+    VERSION = "1.0.0"
     
     @classmethod
     def get_blockchain_settings(cls) -> dict:

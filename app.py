@@ -132,10 +132,9 @@ def create_app() -> Flask:
         """
         logger.log_request(
             method=request.method,
-            path=request.path,
-            query_params=dict(request.args),
-            headers=dict(request.headers),
-            body=request.get_json(silent=True)
+            endpoint=request.path,
+            status=0,  # Não há status ainda
+            duration=0.0  # Não há duração ainda
         )
 
     # Registra os manipuladores de resposta

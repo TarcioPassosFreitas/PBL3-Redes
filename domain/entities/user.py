@@ -15,11 +15,11 @@ class User:
     email: str
     name: str
     created_at: datetime
-    last_login: Optional[datetime] = None
-    active_sessions: List[int]  # List of active session IDs
-    total_charges: Decimal  # Total amount spent in ETH
+    active_sessions: List[int]
+    total_charges: Decimal
     total_sessions: int
-    active_reservations: List[int]  # List of active reservation IDs
+    active_reservations: List[int]
+    last_login: Optional[datetime] = None
 
     def add_session(self, session_id: int) -> None:
         """
