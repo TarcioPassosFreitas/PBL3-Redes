@@ -1,12 +1,15 @@
-from flask import Blueprint, jsonify
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from shared.utils.logger import Logger
+from shared.constants.config import Config
+from datetime import datetime
 
-# Inicializa logger e blueprint
+# Inicializa logger e APIRouter
 logger = Logger(__name__)
-health_bp = Blueprint('health', __name__)
+router = APIRouter()
 
-@health_bp.route('/health', methods=['GET'])
-def health():
+@router.get("/health", tags=["Saúde"], summary="Verifica o status da API")
+async def health():
     """
     Endpoint de verificação de saúde da API.
     
@@ -32,21 +35,19 @@ def health():
               format: date-time
     """
     try:
-        from datetime import datetime
-        from shared.constants.config import Config
-        
         response = {
             "status": "ok",
             "version": Config.VERSION,
             "timestamp": datetime.utcnow().isoformat()
         }
-        
         logger.info("Health check realizado com sucesso")
-        return jsonify(response)
-        
+        return JSONResponse(content=response)
     except Exception as e:
         logger.error(f"Erro ao realizar health check: {str(e)}")
-        return jsonify({
-            "status": "error",
-            "message": "Erro ao verificar status da API"
-        }), 500 
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": "Erro ao verificar status da API"
+            }
+        ) 

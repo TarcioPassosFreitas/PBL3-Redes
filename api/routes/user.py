@@ -1,68 +1,64 @@
-from flask import Blueprint, request, jsonify
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-
-from adapters.http.flask_adapter import FlaskAdapter
-from domain.use_cases.user import UserUseCase
-from shared.constants.texts import Texts
+from fastapi import APIRouter, Request, status, Depends
+from fastapi.responses import JSONResponse
 from shared.utils.logger import Logger
-from infra.repositories.user_repository import UserRepository
-from sqlalchemy.orm import scoped_session, sessionmaker
+from shared.constants.texts import Texts
 from shared.constants.config import Config
-from adapters.database.sqlalchemy_adapter import SQLAlchemyAdapter
-from domain.entities.user import User
-from sqlalchemy import create_engine
+from adapters.http.flask_adapter import FlaskAdapter
+from adapters.blockchain.web3_adapter import Web3Adapter
+from decimal import Decimal
 
 # Inicializa logger e blueprint
 logger = Logger(__name__)
-user_bp = Blueprint("user", __name__, url_prefix="/users")
+router = APIRouter()
 
-# Configura rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+http_adapter = FlaskAdapter()
 
-# Setup SQLAlchemy session
-engine = create_engine(Config.DB_URL)
-Session = scoped_session(sessionmaker(bind=engine))
-user_repository = UserRepository(Session())
-user_use_case = UserUseCase(user_repository)
+@router.get("/", tags=["Usuários"], summary="Lista todos os usuários")
+async def list_users():
+    try:
+        blockchain = Web3Adapter()
+        # Supondo que há um método para listar todos os usuários na blockchain
+        users = blockchain.contract.functions.getAllUsers().call()
+        def serialize_user(user):
+            return {
+                "wallet_address": user[0],
+                "total_sessions": user[1],
+                "total_energy": str(user[2]) if isinstance(user[2], Decimal) else user[2],
+                "total_spent": str(user[3]) if isinstance(user[3], Decimal) else user[3],
+                "last_session_id": user[4]
+            }
+        data = [serialize_user(u) for u in users]
+        return JSONResponse(content={"success": True, "data": data})
+    except Exception as e:
+        logger.error(f"Erro ao listar usuários: {str(e)}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
-@user_bp.route("/", methods=["GET"])
-def list_users():
-    users = user_use_case.list_users()
-    return jsonify(users)
-
-@user_bp.route("/<int:user_id>", methods=["GET"])
-def get_user(user_id):
+@router.get("/<int:user_id>", tags=["Usuários"], summary="Obtém um usuário pelo ID")
+async def get_user(user_id: int):
     user = user_use_case.get_user(user_id)
     if not user:
-        return jsonify({"error": "Usuário não encontrado"}), 404
-    return jsonify(user)
+        return JSONResponse(status_code=404, content={"error": "Usuário não encontrado"})
+    return JSONResponse(content=user)
 
-@user_bp.route("/", methods=["POST"])
-def create_user():
-    data = request.get_json()
+@router.post("/", tags=["Usuários"], summary="Cria um novo usuário")
+async def create_user(data: dict):
     user = user_use_case.create_user(data)
-    return jsonify(user), 201
+    return JSONResponse(content=user, status_code=201)
 
-@user_bp.route("/<int:user_id>", methods=["PUT"])
-def update_user(user_id):
-    data = request.get_json()
+@router.put("/<int:user_id>", tags=["Usuários"], summary="Atualiza um usuário pelo ID")
+async def update_user(user_id: int, data: dict):
     user = user_use_case.update_user(user_id, data)
     if not user:
-        return jsonify({"error": "Usuário não encontrado"}), 404
-    return jsonify(user)
+        return JSONResponse(status_code=404, content={"error": "Usuário não encontrado"})
+    return JSONResponse(content=user)
 
-@user_bp.route("/<int:user_id>", methods=["DELETE"])
-def delete_user(user_id):
+@router.delete("/<int:user_id>", tags=["Usuários"], summary="Deleta um usuário pelo ID")
+async def delete_user(user_id: int):
     user_use_case.delete_user(user_id)
-    return jsonify({"deleted": True})
+    return JSONResponse(content={"deleted": True})
 
-@user_bp.route("", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_profile():
+@router.get("/profile", tags=["Usuários"], summary="Obtém o perfil do usuário autenticado")
+async def get_user_profile(request: Request):
     """
     Obtém o perfil do usuário autenticado.
     
@@ -97,9 +93,8 @@ def get_user_profile():
         logger.error(Texts.format(Texts.ERROR_USER_PROFILE, str(e)))
         return adapter.handle_error(e)
 
-@user_bp.route("/balance", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_balance():
+@router.get("/balance", tags=["Usuários"], summary="Obtém o saldo ETH do usuário autenticado")
+async def get_user_balance(request: Request):
     """
     Obtém o saldo ETH do usuário autenticado.
     
@@ -134,9 +129,8 @@ def get_user_balance():
         logger.error(Texts.format(Texts.ERROR_USER_BALANCE, str(e)))
         return adapter.handle_error(e)
 
-@user_bp.route("/stats", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_stats():
+@router.get("/stats", tags=["Usuários"], summary="Obtém estatísticas do usuário autenticado")
+async def get_user_stats(request: Request):
     """
     Obtém estatísticas do usuário autenticado.
     
@@ -171,8 +165,8 @@ def get_user_stats():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        start_date = adapter.parse_date(request.query.get("start_date"))
+        end_date = adapter.parse_date(request.query.get("end_date"))
         
         # Obtém estatísticas
         use_case = UserUseCase()
@@ -188,9 +182,8 @@ def get_user_stats():
         logger.error(Texts.format(Texts.ERROR_USER_STATS, str(e)))
         return adapter.handle_error(e)
 
-@user_bp.route("/history", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_history():
+@router.get("/history", tags=["Usuários"], summary="Obtém o histórico completo do usuário autenticado")
+async def get_user_history(request: Request):
     """
     Obtém o histórico completo do usuário autenticado.
     
@@ -237,11 +230,11 @@ def get_user_history():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        include_sessions = request.args.get("include_sessions", "true").lower() == "true"
-        include_payments = request.args.get("include_payments", "true").lower() == "true"
-        include_reservations = request.args.get("include_reservations", "true").lower() == "true"
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        include_sessions = request.query.get("include_sessions", "true").lower() == "true"
+        include_payments = request.query.get("include_payments", "true").lower() == "true"
+        include_reservations = request.query.get("include_reservations", "true").lower() == "true"
+        start_date = adapter.parse_date(request.query.get("start_date"))
+        end_date = adapter.parse_date(request.query.get("end_date"))
         
         # Obtém histórico
         use_case = UserUseCase()
@@ -260,9 +253,8 @@ def get_user_history():
         logger.error(Texts.format(Texts.ERROR_USER_HISTORY, str(e)))
         return adapter.handle_error(e)
 
-@user_bp.route("/preferences", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_preferences():
+@router.get("/preferences", tags=["Usuários"], summary="Obtém as preferências do usuário autenticado")
+async def get_user_preferences(request: Request):
     """
     Obtém as preferências do usuário autenticado.
     
@@ -297,9 +289,8 @@ def get_user_preferences():
         logger.error(f"Erro ao obter preferências do usuário: {str(e)}")
         return adapter.handle_error(e)
 
-@user_bp.route("/preferences", methods=["PUT"])
-@limiter.limit("10 per minute")
-def update_user_preferences():
+@router.put("/preferences", tags=["Usuários"], summary="Atualiza as preferências do usuário autenticado")
+async def update_user_preferences(request: Request):
     """
     Atualiza as preferências do usuário autenticado.
     
@@ -350,7 +341,7 @@ def update_user_preferences():
     """
     try:
         # Obtém dados da requisição
-        data = request.get_json()
+        data = await request.json()
         adapter = FlaskAdapter(request)
         
         # Valida autenticação

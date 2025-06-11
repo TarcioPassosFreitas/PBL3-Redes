@@ -1,29 +1,24 @@
-from flask import Blueprint, request
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from fastapi import APIRouter, Request, status, Depends
+from fastapi.responses import JSONResponse
+from shared.utils.logger import Logger
+from shared.constants.texts import Texts
+from shared.constants.config import Config
 
 from adapters.http.flask_adapter import FlaskAdapter
 from domain.use_cases.pay import PaymentUseCase
-from shared.constants.texts import Texts
-from shared.utils.logger import Logger
+from adapters.blockchain.web3_adapter import Web3Adapter
+from decimal import Decimal
 
 # Inicializa logger e blueprint
 logger = Logger(__name__)
-payment_bp = Blueprint("payment", __name__, url_prefix="/payments")
-
-# Configura rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+router = APIRouter()
 
 # Initialize adapters and use cases
 http_adapter = FlaskAdapter()
 payment_use_case = None  # Will be initialized in app.py
 
-@payment_bp.route("", methods=["POST"])
-@limiter.limit("10 per minute")
-def process_payment():
+@router.post("/", tags=["Pagamentos"], summary="Processa um novo pagamento")
+async def process_payment(request: Request):
     """
     Processa um novo pagamento.
     
@@ -63,7 +58,7 @@ def process_payment():
     """
     try:
         # Obtém dados da requisição
-        data = request.get_json()
+        data = await request.json()
         adapter = FlaskAdapter(request)
         
         # Valida autenticação
@@ -90,9 +85,8 @@ def process_payment():
         logger.error(Texts.format(Texts.ERROR_PAYMENT_PROCESS, str(e)))
         return adapter.handle_error(e)
 
-@payment_bp.route("/<int:payment_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_payment_details(payment_id):
+@router.get("/{payment_id}", tags=["Pagamentos"], summary="Obtém detalhes de um pagamento específico")
+async def get_payment_details(payment_id: int, request: Request):
     """
     Obtém detalhes de um pagamento específico.
     
@@ -136,9 +130,8 @@ def get_payment_details(payment_id):
         logger.error(Texts.format(Texts.ERROR_PAYMENT_GET, str(e)))
         return adapter.handle_error(e)
 
-@payment_bp.route("/user", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_payments():
+@router.get("/user", tags=["Pagamentos"], summary="Lista todos os pagamentos do usuário autenticado")
+async def get_user_payments(request: Request):
     """
     Lista todos os pagamentos do usuário autenticado.
     
@@ -178,9 +171,9 @@ def get_user_payments():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        status = request.args.get("status")
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        status = request.query_params.get("status")
+        start_date = adapter.parse_date(request.query_params.get("start_date"))
+        end_date = adapter.parse_date(request.query_params.get("end_date"))
         
         # Lista pagamentos
         use_case = PaymentUseCase()
@@ -197,9 +190,8 @@ def get_user_payments():
         logger.error(Texts.format(Texts.ERROR_PAYMENT_LIST_USER, str(e)))
         return adapter.handle_error(e)
 
-@payment_bp.route("/station/<int:station_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station_payments():
+@router.get("/station/{station_id}", tags=["Pagamentos"], summary="Lista todos os pagamentos de uma estação específica")
+async def get_station_payments(station_id: int, request: Request):
     """
     Lista todos os pagamentos de uma estação específica.
     
@@ -246,10 +238,9 @@ def get_station_payments():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        station_id = request.view_args["station_id"]
-        status = request.args.get("status")
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        status = request.query_params.get("status")
+        start_date = adapter.parse_date(request.query_params.get("start_date"))
+        end_date = adapter.parse_date(request.query_params.get("end_date"))
         
         # Lista pagamentos
         use_case = PaymentUseCase()
@@ -264,4 +255,25 @@ def get_station_payments():
         
     except Exception as e:
         logger.error(Texts.format(Texts.ERROR_PAYMENT_LIST_STATION, str(e)))
-        return adapter.handle_error(e) 
+        return adapter.handle_error(e)
+
+@router.get("/", tags=["Pagamentos"], summary="Lista todos os pagamentos")
+async def list_payments():
+    try:
+        blockchain = Web3Adapter()
+        # Supondo que há um método para listar todos os pagamentos na blockchain
+        payments = blockchain.contract.functions.getAllPayments().call()
+        def serialize_payment(pay):
+            return {
+                "payment_id": pay[0],
+                "session_id": pay[1],
+                "user_address": pay[2],
+                "amount": str(pay[3]) if isinstance(pay[3], Decimal) else pay[3],
+                "timestamp": str(pay[4]),
+                "status": pay[5]
+            }
+        data = [serialize_payment(p) for p in payments]
+        return JSONResponse(content={"success": True, "data": data})
+    except Exception as e:
+        logger.error(f"Erro ao listar pagamentos: {str(e)}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)}) 

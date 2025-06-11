@@ -1,28 +1,44 @@
-from flask import Blueprint, request
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from fastapi import APIRouter, Request, status, Depends
+from fastapi.responses import JSONResponse
+from shared.utils.logger import Logger
+from shared.constants.texts import Texts
+from shared.constants.config import Config
 
 from adapters.http.flask_adapter import FlaskAdapter
-from domain.use_cases.charge import ChargeUseCase
-from shared.constants.texts import Texts
-from shared.utils.logger import Logger
+from adapters.blockchain.web3_adapter import Web3Adapter
+from decimal import Decimal
 
 # Inicializa logger e blueprint
 logger = Logger(__name__)
-charging_bp = Blueprint("charging", __name__, url_prefix="/sessions")
-
-# Configura rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+router = APIRouter()
 
 # Initialize adapters
 http_adapter = FlaskAdapter()
 
-@charging_bp.route("", methods=["POST"])
-@limiter.limit("10 per minute")
-def start_session():
+@router.get("/", tags=["Sessões"], summary="Lista todas as sessões de carregamento")
+async def list_sessions():
+    try:
+        blockchain = Web3Adapter()
+        # Supondo que há um método para listar todas as sessões na blockchain
+        sessions = blockchain.contract.functions.getAllSessions().call()
+        def serialize_session(sess):
+            return {
+                "session_id": sess[0],
+                "station_id": sess[1],
+                "user_address": sess[2],
+                "start_time": str(sess[3]),
+                "end_time": str(sess[4]),
+                "energy": str(sess[5]) if isinstance(sess[5], Decimal) else sess[5],
+                "status": sess[6]
+            }
+        data = [serialize_session(s) for s in sessions]
+        return JSONResponse(content={"success": True, "data": data})
+    except Exception as e:
+        logger.error(f"Erro ao listar sessões: {str(e)}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@router.post("", tags=["Sessões"], summary="Inicia sessão de carregamento")
+async def start_session(request: Request):
     """
     Inicia uma nova sessão de carregamento.
     
@@ -61,7 +77,7 @@ def start_session():
     """
     try:
         # Obtém dados da requisição
-        data = request.get_json()
+        data = await request.json()
         adapter = FlaskAdapter(request)
         
         # Valida autenticação
@@ -87,9 +103,8 @@ def start_session():
         logger.error(Texts.format(Texts.ERROR_SESSION_START, str(e)))
         return adapter.handle_error(e)
 
-@charging_bp.route("/<int:session_id>", methods=["PUT"])
-@limiter.limit("10 per minute")
-def end_session(session_id):
+@router.put("/{session_id}", tags=["Sessões"], summary="Finaliza sessão de carregamento")
+async def end_session(session_id: int, request: Request):
     """
     Finaliza uma sessão de carregamento.
     
@@ -141,9 +156,8 @@ def end_session(session_id):
         logger.error(Texts.format(Texts.ERROR_SESSION_END, str(e)))
         return adapter.handle_error(e)
 
-@charging_bp.route("/<int:session_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_session(session_id):
+@router.get("/{session_id}", tags=["Sessões"], summary="Obtém detalhes da sessão")
+async def get_session(session_id: int, request: Request):
     """
     Obtém detalhes de uma sessão específica.
     
@@ -186,9 +200,8 @@ def get_session(session_id):
         logger.error(Texts.format(Texts.ERROR_SESSION_GET, str(e)))
         return adapter.handle_error(e)
 
-@charging_bp.route("/user", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_sessions():
+@router.get("/user", tags=["Sessões"], summary="Lista sessões do usuário")
+async def get_user_sessions(request: Request):
     """
     Lista todas as sessões do usuário autenticado.
     
@@ -228,9 +241,9 @@ def get_user_sessions():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        status = request.args.get("status")
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        status = request.query_params.get("status")
+        start_date = adapter.parse_date(request.query_params.get("start_date"))
+        end_date = adapter.parse_date(request.query_params.get("end_date"))
         
         # Lista sessões
         sessions = charging_bp.charge_use_case.get_user_sessions(
@@ -246,9 +259,8 @@ def get_user_sessions():
         logger.error(Texts.format(Texts.ERROR_SESSION_LIST_USER, str(e)))
         return adapter.handle_error(e)
 
-@charging_bp.route("/station/<int:station_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station_sessions():
+@router.get("/station/{station_id}", tags=["Sessões"], summary="Lista sessões da estação")
+async def get_station_sessions(station_id: int, request: Request):
     """
     Lista todas as sessões de uma estação específica.
     
@@ -295,10 +307,9 @@ def get_station_sessions():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        station_id = request.view_args["station_id"]
-        status = request.args.get("status")
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        status = request.query_params.get("status")
+        start_date = adapter.parse_date(request.query_params.get("start_date"))
+        end_date = adapter.parse_date(request.query_params.get("end_date"))
         
         # Lista sessões
         sessions = charging_bp.charge_use_case.get_station_sessions(

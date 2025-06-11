@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     wget \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -55,5 +56,8 @@ USER appuser
 # Expõe porta da API
 EXPOSE 5000
 
-# Script de entrada
-ENTRYPOINT ["scripts/entrypoint.sh"] 
+# Torna o script de inicialização executável
+RUN chmod +x scripts/init-db.sh
+
+# Comando para iniciar a aplicação
+CMD bash -c './scripts/init-db.sh && uvicorn app:app --host 0.0.0.0 --port 5000' 

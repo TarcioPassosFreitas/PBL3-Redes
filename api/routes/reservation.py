@@ -1,29 +1,45 @@
-from flask import Blueprint, request
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from fastapi import APIRouter, Request, status, Depends
+from fastapi.responses import JSONResponse
+from shared.utils.logger import Logger
+from shared.constants.texts import Texts
+from shared.constants.config import Config
 
 from adapters.http.flask_adapter import FlaskAdapter
 from domain.use_cases.reserve import ReserveUseCase
-from shared.constants.texts import Texts
-from shared.utils.logger import Logger
+from adapters.blockchain.web3_adapter import Web3Adapter
+from decimal import Decimal
 
 # Inicializa logger e blueprint
 logger = Logger(__name__)
-reservation_bp = Blueprint("reservation", __name__, url_prefix="/reservations")
-
-# Configura rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+router = APIRouter()
 
 # Initialize adapters and use cases
 http_adapter = FlaskAdapter()
 reserve_use_case = None  # Será inicializado no app.py
 
-@reservation_bp.route("", methods=["POST"])
-@limiter.limit("10 per minute")
-def create_reservation():
+@router.get("/", tags=["Reservas"], summary="Lista todas as reservas")
+async def list_reservations():
+    try:
+        blockchain = Web3Adapter()
+        # Supondo que há um método para listar todas as reservas na blockchain
+        reservations = blockchain.contract.functions.getAllReservations().call()
+        def serialize_reservation(res):
+            return {
+                "reservation_id": res[0],
+                "station_id": res[1],
+                "user_address": res[2],
+                "start_time": str(res[3]),
+                "end_time": str(res[4]),
+                "status": res[5]
+            }
+        data = [serialize_reservation(r) for r in reservations]
+        return JSONResponse(content={"success": True, "data": data})
+    except Exception as e:
+        logger.error(f"Erro ao listar reservas: {str(e)}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@router.post("", tags=["Reservas"], summary="Cria uma nova reserva", status_code=status.HTTP_201_CREATED)
+async def create_reservation(request: Request):
     """
     Cria uma nova reserva de estação de carregamento.
     
@@ -68,7 +84,7 @@ def create_reservation():
     """
     try:
         # Obtém dados da requisição
-        data = request.get_json()
+        data = await request.json()
         adapter = http_adapter
         
         # Valida autenticação
@@ -96,9 +112,8 @@ def create_reservation():
         logger.error(Texts.format(Texts.ERROR_RESERVATION_CREATE, str(e)))
         return adapter.handle_error(e)
 
-@reservation_bp.route("/<int:reservation_id>", methods=["DELETE"])
-@limiter.limit("10 per minute")
-def cancel_reservation(reservation_id):
+@router.delete("/{reservation_id}", tags=["Reservas"], summary="Cancela uma reserva", status_code=status.HTTP_200_OK)
+async def cancel_reservation(reservation_id: int):
     """
     Cancela uma reserva existente.
     
@@ -151,9 +166,8 @@ def cancel_reservation(reservation_id):
         logger.error(Texts.format(Texts.ERROR_RESERVATION_CANCEL, str(e)))
         return adapter.handle_error(e)
 
-@reservation_bp.route("/<int:reservation_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_reservation(reservation_id):
+@router.get("/{reservation_id}", tags=["Reservas"], summary="Obtém detalhes da reserva", status_code=status.HTTP_200_OK)
+async def get_reservation(reservation_id: int):
     """
     Obtém detalhes de uma reserva específica.
     
@@ -197,9 +211,8 @@ def get_reservation(reservation_id):
         logger.error(Texts.format(Texts.ERROR_RESERVATION_GET, str(e)))
         return adapter.handle_error(e)
 
-@reservation_bp.route("/user", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_user_reservations():
+@router.get("/user", tags=["Reservas"], summary="Lista reservas do usuário", status_code=status.HTTP_200_OK)
+async def get_user_reservations(request: Request):
     """
     Lista todas as reservas do usuário autenticado.
     
@@ -239,9 +252,9 @@ def get_user_reservations():
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        status = request.args.get("status")
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        status = request.query_params.get("status")
+        start_date = adapter.parse_date(request.query_params.get("start_date"))
+        end_date = adapter.parse_date(request.query_params.get("end_date"))
         
         # Lista reservas
         use_case = reserve_use_case

@@ -1,77 +1,41 @@
-from flask import Blueprint, request
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from fastapi import APIRouter, Request, status, Depends
+from fastapi.responses import JSONResponse
+from shared.utils.logger import Logger
+from shared.constants.texts import Texts
+from shared.constants.config import Config
+from decimal import Decimal
 
 from adapters.http.flask_adapter import FlaskAdapter
-from domain.use_cases.station import StationUseCase
-from shared.constants.texts import Texts
-from shared.utils.logger import Logger
+from adapters.database.models import StationORM
+from sqlalchemy.ext.asyncio import AsyncSession
+from adapters.database.session import get_async_session
 
 # Inicializa logger e blueprint
 logger = Logger(__name__)
-station_bp = Blueprint("station", __name__, url_prefix="/stations")
+router = APIRouter()
 
-# Configura rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+http_adapter = FlaskAdapter()
 
-@station_bp.route("", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_stations():
-    """
-    Lista todas as estações de carregamento.
-    
-    ---
-    tags:
-      - Estações
-    summary: Lista estações
-    description: Retorna todas as estações de carregamento disponíveis
-    security:
-      - bearerAuth: []
-    parameters:
-      - in: query
-        name: status
-        type: string
-        enum: [available, busy, offline, maintenance]
-        description: Filtra estações por status
-      - in: query
-        name: location
-        type: string
-        description: Filtra estações por localização (cidade, bairro, etc)
-    responses:
-      200:
-        description: Lista de estações
-      401:
-        description: Não autorizado
-    """
+@router.get("/", tags=["Estações"], summary="Lista todas as estações")
+async def list_stations(session: AsyncSession = Depends(get_async_session)):
     try:
-        adapter = FlaskAdapter(request)
-        
-        # Valida autenticação
-        adapter.authenticate_request()
-        
-        # Obtém parâmetros de filtro
-        status = request.args.get("status")
-        location = request.args.get("location")
-        
-        # Lista estações
-        use_case = StationUseCase()
-        stations = use_case.get_stations(
-            status=status,
-            location=location
+        result = await session.execute(
+            StationORM.__table__.select()
         )
-        
-        return adapter.create_response(stations)
-        
+        def serialize_station(row):
+            d = dict(row)
+            for key, value in d.items():
+                if isinstance(value, Decimal):
+                    d[key] = str(value)
+            return d
+        data = [serialize_station(row) for row in result.mappings().all()]
+        return JSONResponse(content={"success": True, "data": data})
     except Exception as e:
-        logger.error(Texts.format(Texts.ERROR_STATION_LIST, str(e)))
-        return adapter.handle_error(e)
+        logger.error(f"Erro ao listar estações: {str(e)}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
-@station_bp.route("/<int:station_id>", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station(station_id):
+@router.get("/{station_id}", tags=["Estações"], summary="Obtém detalhes da estação")
+async def get_station(station_id: int):
     """
     Obtém detalhes de uma estação específica.
     
@@ -97,7 +61,7 @@ def get_station(station_id):
         description: Estação não encontrada
     """
     try:
-        adapter = FlaskAdapter(request)
+        adapter = FlaskAdapter(Request())
         
         # Valida autenticação
         adapter.authenticate_request()
@@ -112,9 +76,8 @@ def get_station(station_id):
         logger.error(Texts.format(Texts.ERROR_STATION_GET, str(e)))
         return adapter.handle_error(e)
 
-@station_bp.route("/<int:station_id>/status", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station_status(station_id):
+@router.get("/{station_id}/status", tags=["Estações"], summary="Obtém status da estação")
+async def get_station_status(station_id: int):
     """
     Obtém o status atual de uma estação.
     
@@ -140,7 +103,7 @@ def get_station_status(station_id):
         description: Estação não encontrada
     """
     try:
-        adapter = FlaskAdapter(request)
+        adapter = FlaskAdapter(Request())
         
         # Valida autenticação
         adapter.authenticate_request()
@@ -155,9 +118,8 @@ def get_station_status(station_id):
         logger.error(Texts.format(Texts.ERROR_STATION_STATUS, str(e)))
         return adapter.handle_error(e)
 
-@station_bp.route("/<int:station_id>/availability", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station_availability(station_id):
+@router.get("/{station_id}/availability", tags=["Estações"], summary="Obtém disponibilidade da estação")
+async def get_station_availability(station_id: int):
     """
     Obtém a disponibilidade de uma estação.
     
@@ -193,14 +155,14 @@ def get_station_availability(station_id):
         description: Estação não encontrada
     """
     try:
-        adapter = FlaskAdapter(request)
+        adapter = FlaskAdapter(Request())
         
         # Valida autenticação
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        start_date = adapter.parse_date(Request().query.get("start_date"))
+        end_date = adapter.parse_date(Request().query.get("end_date"))
         
         # Obtém disponibilidade
         use_case = StationUseCase()
@@ -216,9 +178,8 @@ def get_station_availability(station_id):
         logger.error(Texts.format(Texts.ERROR_STATION_AVAILABILITY, str(e)))
         return adapter.handle_error(e)
 
-@station_bp.route("/<int:station_id>/stats", methods=["GET"])
-@limiter.limit("30 per minute")
-def get_station_stats(station_id):
+@router.get("/{station_id}/stats", tags=["Estações"], summary="Obtém estatísticas da estação")
+async def get_station_stats(station_id: int):
     """
     Obtém estatísticas de uma estação.
     
@@ -254,14 +215,14 @@ def get_station_stats(station_id):
         description: Estação não encontrada
     """
     try:
-        adapter = FlaskAdapter(request)
+        adapter = FlaskAdapter(Request())
         
         # Valida autenticação
         adapter.authenticate_request()
         
         # Obtém parâmetros de filtro
-        start_date = adapter.parse_date(request.args.get("start_date"))
-        end_date = adapter.parse_date(request.args.get("end_date"))
+        start_date = adapter.parse_date(Request().query.get("start_date"))
+        end_date = adapter.parse_date(Request().query.get("end_date"))
         
         # Obtém estatísticas
         use_case = StationUseCase()
